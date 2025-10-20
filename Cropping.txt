@@ -1,0 +1,47 @@
+Ghi chú: Giải thích 2 file skull_crop.py và ultrasound_preprocessor.py
+
+1) skull_crop.py
+- Mục đích: Tự động phát hiện “vòng sọ” sáng trong ảnh siêu âm thai và cắt ra khung ảnh tập trung vùng não.
+- Tư tưởng chính:
+  1. Thử HoughCircles để tìm vòng tròn gần tâm (nếu hợp)
+  2. Nếu không có vòng tròn phù hợp: dùng Canny + morphology để lấy biên, sau đó fit ellipse cho nhiều contour, chấm điểm để chọn ellipse tốt nhất (tròn, gần tâm, kích thước hợp lý, biên liên tục).
+  3. Từ ellipse tốt nhất, tạo mask elip, lấy bounding box khít + nới padding theo tỷ lệ pad_ratio, cắt ra, sau đó pad thành hình vuông và resize.
+- Điểm mạnh: đơn giản, không cần nhãn/ML; ưu tiên hình tròn/oval nên bám tốt vào sọ.
+
+Các hàm chính:
+- ensure_dir, imread_gray, to_bgr: hàm tiện ích.
+- ellipse_to_mask(shape, center, axes, angle): tạo ảnh mask nhị phân của elip.
+- bbox_from_mask(mask, pad_ratio): lấy bbox khít xung quanh mask và nới biên theo pad_ratio.
+- crop_pad_square(img, bbox): cắt theo bbox rồi pad thành ảnh vuông (để không méo khi resize).
+- try_hough_circle(gray, ...): thử phát hiện vòng tròn bằng Hough; chọn vòng tròn gần tâm nhất.
+- edges_and_ellipse(gray, ...): 
+  + Tăng cường ảnh (CLAHE + bilateral), dò biên Canny, dilate nối biên.
+  + Duyệt các contour đủ dài, fitEllipse; tính điểm dựa trên: độ tròn (b/a), khoảng cách tới tâm, kích thước tương đối, và độ khớp đường viền (peri_err).
+  + Trả về ellipse tốt nhất.
+- detect_skull_ellipse(gray, ...): 
+  + Ưu tiên Hough; nếu thất bại dùng edges_and_ellipse; có kiểm tra lại khi elip quá dẹt.
+  + Trả về (center, axes, angle) của elip.
+- process_image(img_path, out_dir, args): pipeline cho một ảnh:
+  + Đọc ảnh → phát hiện elip → tạo mask → bbox + padding → crop → pad vuông → resize về intermediate → center-crop về final.
+  + Lưu ảnh kết quả và (tuỳ chọn) ảnh debug.
+- main(): CLI đọc tham số và xử lý 1 ảnh hoặc cả thư mục.
+
+Tham số CLI quan trọng:
+- --hough: thử Hough trước (khuyến nghị bật với ảnh sọ rõ).
+- --canny_low/--canny_high: ngưỡng Canny.
+- --dilate_iter: số lần giãn để nối biên.
+- --axis_ratio_min/max: ràng buộc độ tròn (b/a) của elip.
+- --scale_axes: HỆ SỐ PHÓNG to elip trước khi cắt (mặc định 1.15 theo bạn chọn).
+- --pad_ratio: NỚI BỜI xung quanh bbox theo phần trăm max(w,h) (mặc định 0.10 theo bạn chọn).
+- --intermediate/--final: bước chuẩn hoá kích thước (resize và center-crop).
+- --save_debug/--debug_dir: lưu hình debug (overlay elip và ảnh cropped).
+
+Ngõ ra:
+- processed_<name>.png: ảnh đã cắt và chuẩn hoá.
+- debug (nếu bật): ellipse_<name>.png (vẽ elip), crop_<name>.png (ảnh sau crop).
+
+Mẹo tinh chỉnh:
+- Nếu cắt quá chật: tăng --scale_axes hoặc --pad_ratio.
+- Nếu phát hiện sai do nhiễu: tăng --dilate_iter hoặc chỉnh ngưỡng Canny.
+- Nếu ảnh rất méo/không tròn: nới --axis_ratio_min thấp hơn.
+

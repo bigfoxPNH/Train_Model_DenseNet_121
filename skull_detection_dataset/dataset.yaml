@@ -1,0 +1,14 @@
+# YOLOv8 Dataset Configuration for Skull Detection
+# Path to dataset root directory
+path: ./skull_detection_dataset
+
+# Paths to train and validation image directories (relative to 'path')
+train: images/train
+val: images/val
+
+# Number of classes
+nc: 1
+
+# Class names
+names:
+  0: skull
