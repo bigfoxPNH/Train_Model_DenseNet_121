@@ -128,8 +128,7 @@ class ModelEvaluator:
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             print(f"Confusion matrix saved to: {save_path}")
-        
-        plt.show()
+        plt.close()
         
     def plot_roc_curve(self, save_path=None):
         """Plot ROC curve"""
@@ -152,8 +151,7 @@ class ModelEvaluator:
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             print(f"ROC curve saved to: {save_path}")
-
-        plt.show()
+        plt.close()
             
     def plot_precision_recall_curve(self, save_path=None):
         """Plot Precision-Recall curve"""
@@ -173,8 +171,7 @@ class ModelEvaluator:
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             print(f"PR curve saved to: {save_path}")
-
-        plt.show()
+        plt.close()
     
     def generate_detailed_report(self, save_path=None):
         """Generate detailed classification report"""

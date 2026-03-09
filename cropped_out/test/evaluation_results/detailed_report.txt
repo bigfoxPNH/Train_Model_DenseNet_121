@@ -1,0 +1,10 @@
+DETAILED CLASSIFICATION REPORT
+==================================================
+                 precision    recall  f1-score   support
+
+  Qualified_PNG       0.61      0.34      0.43       157
+Unqualified_PNG       0.52      0.77      0.62       145
+
+       accuracy                           0.54       302
+      macro avg       0.56      0.55      0.53       302
+   weighted avg       0.56      0.54      0.52       302

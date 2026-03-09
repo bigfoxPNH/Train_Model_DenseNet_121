@@ -4,12 +4,36 @@ Script để train mô hình DenseNet-121 - Phiên bản cải tiến
 
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.layers import RandomContrast
 from tensorflow.keras.applications import DenseNet121
 from tensorflow.keras.applications.densenet import preprocess_input
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout, BatchNormalization
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import AdamW
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.optimizers.schedules import CosineDecay
+
+
+from tensorflow.keras import backend as K
+
+def sigmoid_focal_crossentropy(y_true, y_pred, alpha=0.25, gamma=2.0):
+    """
+    Focal loss for binary classification.
+    """
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.cast(y_pred, tf.float32)
+
+    bce = K.binary_crossentropy(y_true, y_pred)
+
+    p_t = (y_true * y_pred) + ((1 - y_true) * (1 - y_pred))
+    modulating_factor = K.pow(1.0 - p_t, gamma)
+
+    alpha_factor = y_true * alpha + (1 - y_true) * (1 - alpha)
+
+    focal_loss = alpha_factor * modulating_factor * bce
+
+    return K.mean(focal_loss, axis=-1)
+
 
 # --- 1. Thiết lập tham số ---
 IMG_HEIGHT = 224
@@ -21,7 +45,7 @@ TEST_DIR = "cropped_out/test"
 
 # Tham số huấn luyện cải tiến
 HEAD_EPOCHS = 15
-FINETUNE_EPOCHS = 60  # Tăng lên 60
+FINETUNE_EPOCHS = 80  # Tăng lên 80
 HEAD_LEARNING_RATE = 1e-3
 BACKBONE_LEARNING_RATE = 1e-5
 PATIENCE = 15  # Tăng patience lên 15
@@ -30,15 +54,16 @@ PATIENCE = 15  # Tăng patience lên 15
 def create_data_generators():
     """Tạo data generators với augmentation"""
     train_datagen = ImageDataGenerator(
-        rotation_range=20,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
-        shear_range=0.2,
-        zoom_range=0.2,
+        rotation_range=25,          # Tăng cường xoay
+        width_shift_range=0.25,     # Tăng cường dịch chuyển ngang
+        height_shift_range=0.25,    # Tăng cường dịch chuyển dọc
+        shear_range=0.25,           # Tăng cường biến dạng
+        zoom_range=0.25,            # Tăng cường zoom
         horizontal_flip=True,
-        brightness_range=[0.8, 1.2],  # Thêm augmentation độ sáng
+        vertical_flip=True,         # Thêm lật dọc
+        brightness_range=[0.8, 1.2],  # Giữ nguyên augmentation độ sáng
         fill_mode='nearest',
-        preprocessing_function=preprocess_input  # Chuẩn hóa theo ImageNet
+        preprocessing_function=preprocess_input  # Giữ nguyên chuẩn hóa
     )
 
     test_datagen = ImageDataGenerator(preprocessing_function=preprocess_input) # Chuẩn hóa theo ImageNet
@@ -66,11 +91,20 @@ def build_densenet_model():
     base_model = DenseNet121(weights='imagenet', include_top=False, 
                              input_shape=(IMG_HEIGHT, IMG_WIDTH, 3))
     
-    # Xây dựng head
+    # Xây dựng head tùy chỉnh mạnh mẽ hơn
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
+
+    # Block 1
+    x = Dense(1024, activation='relu')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.5)(x)
+
+    # Block 2
     x = Dense(512, activation='relu')(x)
-    x = Dropout(0.5)(x)  # Tăng dropout
+    x = BatchNormalization()(x)
+    x = Dropout(0.3)(x)
+
     predictions = Dense(1, activation='sigmoid')(x)
     
     model = Model(inputs=base_model.input, outputs=predictions)
@@ -89,7 +123,7 @@ def train_model():
         layer.trainable = False
 
     model.compile(optimizer=AdamW(learning_rate=HEAD_LEARNING_RATE),
-                  loss='binary_crossentropy',
+                  loss=sigmoid_focal_crossentropy,  # Sử dụng Focal Loss
                   metrics=['accuracy'])
 
     history_head = model.fit(
@@ -106,15 +140,21 @@ def train_model():
         else:
             layer.trainable = False
 
-    model.compile(optimizer=AdamW(learning_rate=BACKBONE_LEARNING_RATE),
-                  loss='binary_crossentropy',
+    # Tạo CosineDecay learning rate schedule
+    total_steps = len(train_generator) * FINETUNE_EPOCHS
+    cosine_decay = CosineDecay(
+        initial_learning_rate=BACKBONE_LEARNING_RATE,
+        decay_steps=total_steps,
+        alpha=0.1  # Tối thiểu learning rate = 0.1 * learning rate ban đầu
+    )
+
+    model.compile(optimizer=AdamW(learning_rate=cosine_decay),
+                  loss=sigmoid_focal_crossentropy, # Sử dụng Focal Loss
                   metrics=['accuracy'])
 
-    # Định nghĩa callbacks
-    early_stopping = EarlyStopping(monitor='val_loss', patience=PATIENCE,
+    # Định nghĩa callbacks (bỏ ReduceLROnPlateau)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=20, # Tăng patience
                                    verbose=1, restore_best_weights=True)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
-                                  patience=PATIENCE // 2, verbose=1)
     model_checkpoint = ModelCheckpoint('densenet121_best_model.h5',
                                        monitor='val_accuracy', save_best_only=True, verbose=1)
 
@@ -122,7 +162,7 @@ def train_model():
         train_generator,
         epochs=FINETUNE_EPOCHS,
         validation_data=test_generator,
-        callbacks=[early_stopping, reduce_lr, model_checkpoint],
+        callbacks=[early_stopping, model_checkpoint],
         initial_epoch=history_head.epoch[-1]
     )
 

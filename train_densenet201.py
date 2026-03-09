@@ -129,7 +129,7 @@ def train_model():
     # --- 5. Lưu mô hình cuối cùng (đã được restore_best_weights) ---
     print("\n--- Lưu mô hình tốt nhất ---")
     # Không cần save lại vì EarlyStopping(restore_best_weights=True) và ModelCheckpoint đã xử lý
-        print(f"Mô hình tốt nhất đã được lưu tại densenet201_best_model.h5")
+    print(f"Mô hình tốt nhất đã được lưu tại densenet201_best_model.h5")
 
 if __name__ == "__main__":
     train_model()
